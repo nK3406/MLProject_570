@@ -10,7 +10,7 @@ def list_h5_structure(h5_path: Path, max_depth: int = 4) -> None:
     """HDF5 dosyasındaki grup/dataset yapısını yazdırır."""
     def _traverse(name, obj, depth):
         indent = "  " * depth
-        if isinstance(obj, h5py.Dataset):
+        if isinstance(obj, h5py.Group):
             print(f"{indent}📄 {name}  {obj.shape}  {obj.dtype}")
         else:
             print(f"{indent}📁 {name}/")
