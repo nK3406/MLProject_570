@@ -35,26 +35,45 @@ def list_h5_structure(h5_path: Path, max_depth: int = 4) -> None:
     with h5py.File(h5_path, "r") as f:
         _traverse("", f, 0)
 
-def h5_dataset_to_parquet(
+def h5_block_to_parquet_wide(
     h5_path: Path,
-    dataset_key: str,
-    out_parquet_dir: Path,
-    chunk_rows: int = 250_000,
-    partition_cols: list[str] | None = None,
+    out_dir: Path,
+    block_key: str = "t/block0_values",
+    axis0_key: str = "t/axis0",
+    axis1_key: str = "t/axis1",
+    chunk_rows: int = 24 * 60,        # 1 gün = 1440 satır
+    add_timestamp: bool = True,
 ) -> None:
     """
-    Seçili dataset'i satırlar hâlinde chunk-chunk okuyup Parquet dosyalarına yazar.
+    LargeST HDF5 dosyasındaki 'block0_values' (zaman × sensör) matrisini
+    geniş formatta (sensor_id'ler sütun) Parquet dosyalarına yazar.
+
+    - Her 'chunk_rows' kadar satır bir Parquet dosyasına gider.
+    - Bellek verimliliği için blok blok okur.
     """
-    out_parquet_dir.mkdir(parents=True, exist_ok=True)
+    h5_path = Path(h5_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(h5_path, "r") as f:
-        dset = f[dataset_key]
-        n_rows = dset.shape[0]
+        values_ds  = f[block_key]
+        sensor_ids = f[axis0_key][:].astype(str)      # (8600,)
+        timestamps = f[axis1_key][:]                  # (N,)
 
-        for start in tqdm(range(0, n_rows, chunk_rows), desc=f"{h5_path.name}:{dataset_key}"):
+        n_rows = values_ds.shape[0]
+
+        for start in tqdm(range(0, n_rows, chunk_rows), desc=h5_path.name):
             stop = min(start + chunk_rows, n_rows)
-            chunk_arr = dset[start:stop]
-            df = pd.DataFrame(chunk_arr)
 
-            file_name = f"{h5_path.stem}_{dataset_key}_{start}_{stop-1}.parquet"
-            df.to_parquet(out_parquet_dir / file_name, index=False, partition_cols=partition_cols)
+            # --- Chunk’ı oku ---
+            val_chunk = values_ds[start:stop, :]        # ndarray  (chunk_rows × 8600)
+
+            # --- DataFrame oluştur ---
+            df = pd.DataFrame(val_chunk, columns=sensor_ids)
+
+            if add_timestamp:
+                df.insert(0, "timestamp", timestamps[start:stop])
+
+            # --- Parquet kaydet ---
+            out_file = out_dir / f"{h5_path.stem}_{start}_{stop-1}.parquet"
+            df.to_parquet(out_file, index=False)

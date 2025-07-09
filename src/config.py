@@ -1,8 +1,8 @@
 """Proje genel yolları & temel ayarlar."""
 from pathlib import Path
 
-# Proje kök dizini = config.py'nin 2 seviye üstü
-PROJECT_ROOT   = Path(__file__).resolve().parents[2]
+# Proje kök dizini
+PROJECT_ROOT   = Path(__file__).resolve()
 
 DATA_RAW       = PROJECT_ROOT / "data" / "raw"
 DATA_INTERIM   = PROJECT_ROOT / "data" / "interim"
