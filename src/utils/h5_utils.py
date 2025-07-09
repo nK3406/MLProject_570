@@ -7,16 +7,30 @@ from pathlib import Path
 from tqdm import tqdm
 
 def list_h5_structure(h5_path: Path, max_depth: int = 4) -> None:
-    """HDF5 dosyasındaki grup/dataset yapısını yazdırır."""
+    """
+    HDF5 dosyasındaki grup/dataset yapısını hiyerarşik olarak yazdırır.
+    Dataset düğümlerinde .items() çağrısı yapılmaz.
+    """
+
     def _traverse(name, obj, depth):
         indent = "  " * depth
-        if isinstance(obj, h5py.Group):
+        if isinstance(obj, h5py.Dataset):
+            # Dataset: sadece ad, shape ve dtype göster
             print(f"{indent}📄 {name}  {obj.shape}  {obj.dtype}")
-        else:
+        elif isinstance(obj, h5py.Group):
+            # Group: adı yaz, sonra içindekileri gez
             print(f"{indent}📁 {name}/")
-        if depth < max_depth:
-            for key, val in obj.items():
-                _traverse(f"{name}/{key}" if name else key, val, depth + 1)
+            if depth < max_depth:
+                for key, val in obj.items():
+                    child_name = f"{name}/{key}" if name else key
+                    _traverse(child_name, val, depth + 1)
+        else:
+            # Diğer hdf5 objeleri (nadir)
+            print(f"{indent}❔ {name}")
+
+    h5_path = Path(h5_path)
+    if not h5_path.exists():
+        raise FileNotFoundError(h5_path)
 
     with h5py.File(h5_path, "r") as f:
         _traverse("", f, 0)
