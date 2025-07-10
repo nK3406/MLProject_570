@@ -2,7 +2,7 @@
 from pathlib import Path
 
 # Proje kök dizini
-PROJECT_ROOT   = Path(__file__).resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 DATA_RAW       = PROJECT_ROOT / "data" / "raw"
 DATA_INTERIM   = PROJECT_ROOT / "data" / "interim"
