@@ -35,6 +35,48 @@ def list_h5_structure(h5_path: Path, max_depth: int = 4) -> None:
     with h5py.File(h5_path, "r") as f:
         _traverse("", f, 0)
 
+def h5_to_parquet(
+    h5_path: Path,
+    parquet_path: Path,
+    dataset_key: str,
+    timestamp_key: str = "t/axis1",
+    columns: list = None,
+    chunk_rows: int = None,
+) -> None:
+    """
+    Belirtilen bir HDF5 dataset'ini pandas DataFrame'e çevirip, zaman damgasını (timestamp) ilk sütuna ekleyerek Parquet olarak kaydeder.
+
+    Args:
+        h5_path (Path): HDF5 dosya yolu
+        parquet_path (Path): Parquet dosya yolu (veya klasörü)
+        dataset_key (str): HDF5 içindeki dataset anahtarı (örn: 'mygroup/mydataset')
+        timestamp_key (str): Zaman damgası dataset anahtarı (örn: 't/axis1'). DataFrame'in ilk sütunu olarak eklenir.
+        columns (list, optional): DataFrame sütun isimleri. None ise varsayılan isimler kullanılır.
+        chunk_rows (int, optional): Satır bazında parça parça okuma (büyük dosyalar için). None ise tamamı okunur.
+    """
+    h5_path = Path(h5_path)
+    parquet_path = Path(parquet_path)
+    with h5py.File(h5_path, "r") as f:
+        ds = f[dataset_key]
+        timestamps = f[timestamp_key][:]
+        n_rows = ds.shape[0]
+        n_cols = ds.shape[1] if len(ds.shape) > 1 else 1
+        if chunk_rows is None:
+            data = ds[:]
+            df = pd.DataFrame(data, columns=columns)
+            df.index = pd.Index(timestamps, name="timestamp")
+            df.to_parquet(parquet_path, index=True)
+        else:
+            parquet_path.parent.mkdir(parents=True, exist_ok=True)
+            for start in tqdm(range(0, n_rows, chunk_rows), desc=f"{h5_path.name} chunks"):
+                stop = min(start + chunk_rows, n_rows)
+                data = ds[start:stop]
+                df = pd.DataFrame(data, columns=columns)
+                df.index = pd.Index(timestamps[start:stop], name="timestamp")
+                out_file = parquet_path.parent / f"{h5_path.stem}_{start}_{stop-1}.parquet"
+                df.to_parquet(out_file, index=True)
+
+
 def h5_block_to_parquet_wide(
     h5_path: Path,
     out_dir: Path,
