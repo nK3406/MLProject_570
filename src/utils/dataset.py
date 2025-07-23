@@ -11,9 +11,11 @@ except ImportError:
 # --------------------
 # Hiperparametreler
 # --------------------
-BATCH_SIZE = 64         # minibatch boyutu\ nTRAIN_RATIO = 0.8        # eğitim-verification ayırma oranı
+BATCH_SIZE = 64         # minibatch boyutu
+TRAIN_RATIO = 0.8       # eğitim-verification ayırma oranı
 X = 12                  # geçmiş zaman dilimi sayısı (örneğin 12*5 dakikalık adım)
-Y = 3                   # tahmin edilecek zaman dilimi sayısı\ nPARQUET_PATH = "data/traffic.parquet"  # veri yolu
+Y = 3                   # tahmin edilecek zaman dilimi sayısı
+PARQUET_PATH = "data/traffic.parquet"  # veri yolu
 
 class TrafficDataset(Dataset):
     def __init__(self, data_array: np.ndarray, x: int, y: int):
