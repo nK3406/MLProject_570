@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from sklearn.metrics import mean_squared_error, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+import os
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # LSTM tabanlı model
 class LSTMModel(nn.Module):
@@ -84,34 +85,27 @@ class TrafficPredictor:
         self.history = {
             "train_loss": [],
             "val_loss": [],
-            "train_acc": [],
-            "val_acc": []
+            "val_mse": [],
+            "val_mae": [],
+            "val_r2": []
         }
         self.final_metrics = {}
 
     def compute_metrics(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> dict:
         y_t = y_true.detach().cpu().numpy().reshape(-1)
         y_p = y_pred.detach().cpu().numpy().reshape(-1)
-        # Regresyon metriği
         mse = mean_squared_error(y_t, y_p)
-        # Sınıflandırma metrikleri (tamsayıya yuvarlayarak)
-        y_t_int = np.round(y_t).astype(int)
-        y_p_int = np.round(y_p).astype(int)
-        acc = accuracy_score(y_t_int, y_p_int)
-        prec = precision_score(y_t_int, y_p_int, average='macro', zero_division=0)
-        rec = recall_score(y_t_int, y_p_int, average='macro', zero_division=0)
-        f1 = f1_score(y_t_int, y_p_int, average='macro', zero_division=0)
-        cm = confusion_matrix(y_t_int, y_p_int)
+        mae = mean_absolute_error(y_t, y_p)
+        r2 = r2_score(y_t, y_p)
         return {
             'mse': mse,
-            'accuracy': acc,
-            'precision': prec,
-            'recall': rec,
-            'f1_score': f1,
-            'confusion_matrix': cm
+            'mae': mae,
+            'r2': r2
         }
 
-    def train(self, train_loader, val_loader, epochs: int = 10):
+    def train(self, train_loader, val_loader, epochs: int = 10, save_path: str | None = None, save_optimizer: bool = False):
+        best_val_loss = float('inf') if save_path else None
+        best_epoch = -1
         for epoch in range(1, epochs + 1):
             self.model.train()
             train_losses = []
@@ -142,21 +136,53 @@ class TrafficPredictor:
                     all_true.append(yb)
                     all_pred.append(yp)
             val_loss = np.mean(val_losses)
+            # checkpoint
+            if save_path and val_loss < best_val_loss:
+                checkpoint = self.model.state_dict()
+                if save_optimizer:
+                    checkpoint = {
+                        'model': self.model.state_dict(),
+                        'optimizer': self.optimizer.state_dict()
+                    }
+                torch.save(checkpoint, save_path)
+                best_val_loss = val_loss
+                best_epoch = epoch
+                print(f"  >> Model saved to {save_path} (val_loss improved)")
             self.history['val_loss'].append(val_loss)
 
             metrics = self.compute_metrics(torch.cat(all_true), torch.cat(all_pred))
-            self.history['train_acc'].append(metrics['accuracy'])
-            self.history['val_acc'].append(metrics['accuracy'])
+            self.history['val_mse'].append(metrics['mse'])
+            self.history['val_mae'].append(metrics['mae'])
+            self.history['val_r2'].append(metrics['r2'])
 
             print(
                 f"Epoch {epoch}/{epochs}  "
                 f"Train Loss: {train_loss:.4f}  "
                 f"Val Loss: {val_loss:.4f}  "
-                f"Val Acc: {metrics['accuracy']:.4f}"
+                f"Val MSE: {metrics['mse']:.4f}  "
+                f"Val R2: {metrics['r2']:.4f}"
             )
 
         # Son metrikler
         self.final_metrics = self.compute_metrics(torch.cat(all_true), torch.cat(all_pred))
+        if best_epoch != -1:
+            print(f"Training finished. Best epoch: {best_epoch} with val_loss={best_val_loss:.4f}")
+
+    def save_model(self, path: str):
+        """Save current model parameters"""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        torch.save(self.model.state_dict(), path)
+
+    def load_model(self, path: str, load_optimizer: bool = False):
+        """Load model (and optionally optimizer) parameters from file"""
+        checkpoint = torch.load(path, map_location=self.device)
+        if isinstance(checkpoint, dict) and 'model' in checkpoint:
+            self.model.load_state_dict(checkpoint['model'])
+            if load_optimizer and 'optimizer' in checkpoint:
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+        else:
+            self.model.load_state_dict(checkpoint)
+        self.model.to(self.device)
 
     def show(self):
         print("== Son Performans Metrikleri ==")
