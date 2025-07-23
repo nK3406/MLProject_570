@@ -29,12 +29,14 @@ class LSTMModel(nn.Module):
 # SCGNN tabanlı model: sensörler arası ilişkileri grafik konvolüsyonu ile işler
 try:
     from torch_geometric.nn import GCNConv
-except ImportError:
-    raise ImportError("SCGNNModel için torch-geometric'in kurulması gerekiyor.")
+except ImportError:  # torch-geometric kurulu değilse SCGNNModel kullanılamaz
+    GCNConv = None
 
 class SCGNNModel(nn.Module):
     def __init__(self, sensors: int, x: int, y: int, hidden_dim: int = 64, edge_index=None):
         super(SCGNNModel, self).__init__()
+        if GCNConv is None:
+            raise ImportError("torch-geometric kurulu değil, SCGNNModel kullanılamaz.")
         if edge_index is None:
             raise ValueError("edge_index (graf adjacency) parametresi gerekli.")
         self.sensors = sensors
