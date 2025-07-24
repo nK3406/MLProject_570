@@ -62,6 +62,33 @@ class TrafficDataset(Dataset):
         )
 
 
+    def inverse_pca_transform(self, reduced_data):
+        """
+        Restores the original feature dimensionality of data reduced by PCA.
+        If data is a torch.Tensor, returns a torch.Tensor; otherwise returns a numpy array.
+        """
+        if self.pca is None:
+            return reduced_data
+        is_tensor = isinstance(reduced_data, torch.Tensor)
+        if is_tensor:
+            data_np = reduced_data.detach().cpu().numpy()
+        else:
+            data_np = reduced_data
+        # Flatten last dimension and reshape to 2D array for inverse transform
+        orig_shape = data_np.shape
+        flat = data_np.reshape(-1, orig_shape[-1])
+        # Apply inverse PCA
+        inv_flat = self.pca.inverse_transform(flat)
+        # Restore original feature count
+        feature_count = self.pca.components_.shape[1]
+        restored = inv_flat.reshape(*orig_shape[:-1], feature_count)
+        # Convert back to tensor if needed
+        if is_tensor:
+            return torch.tensor(restored, dtype=torch.float32)
+        else:
+            return restored
+
+
 def load_data(parquet_path: str = PARQUET_PATH) -> np.ndarray:
     """
     Parquet formatındaki veri setini okuyup zaman sıralı numpy dizisine çevirir.
