@@ -68,7 +68,8 @@ class TrafficPredictor:
         x: int,
         y: int,
         edge_index=None,
-        device: str = None
+        device: str = None,
+        pca_model=None
     ):
         if model_type not in ["lstm", "scgnn"]:
             raise ValueError("model_type 'lstm' veya 'scgnn' olmalı.")
@@ -84,14 +85,42 @@ class TrafficPredictor:
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.history = {
             "train_loss": [],
+            "train_mse": [],
+            "train_mae": [],
+            "train_r2": [],
             "val_loss": [],
             "val_mse": [],
             "val_mae": [],
             "val_r2": []
         }
         self.final_metrics = {}
+        # PCA model for inverse transformation (optional)
+        self.pca_model = pca_model
 
     def compute_metrics(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> dict:
+        # Convert to numpy
+        y_true_np = y_true.detach().cpu().numpy()
+        y_pred_np = y_pred.detach().cpu().numpy()
+        # If PCA model provided, inverse-transform to original feature space
+        if getattr(self, 'pca_model', None) is not None:
+            # y_true_np shape: (batch, y_steps, n_components)
+            batch, y_steps, comps = y_true_np.shape
+            # flatten time and batch dims
+            y_true_flat = y_true_np.reshape(-1, comps)
+            y_pred_flat = y_pred_np.reshape(-1, comps)
+            # inverse transform
+            y_true_orig = self.pca_model.inverse_transform(y_true_flat)
+            y_pred_orig = self.pca_model.inverse_transform(y_pred_flat)
+            # flatten for metrics
+            y_t = y_true_orig.flatten()
+            y_p = y_pred_orig.flatten()
+        else:
+            y_t = y_true_np.flatten()
+            y_p = y_pred_np.flatten()
+        mse = mean_squared_error(y_t, y_p)
+        mae = mean_absolute_error(y_t, y_p)
+        r2 = r2_score(y_t, y_p)
+        return {'mse': mse, 'mae': mae, 'r2': r2}
         y_t = y_true.detach().cpu().numpy().reshape(-1)
         y_p = y_pred.detach().cpu().numpy().reshape(-1)
         mse = mean_squared_error(y_t, y_p)
@@ -109,6 +138,9 @@ class TrafficPredictor:
         for epoch in range(1, epochs + 1):
             self.model.train()
             train_losses = []
+            # Collect predictions and truths for train metrics
+            train_true = []
+            train_pred = []
             for X_batch, y_batch in train_loader:
                 Xb = X_batch.to(self.device).float()
                 yb = y_batch.to(self.device).float()
@@ -118,8 +150,16 @@ class TrafficPredictor:
                 loss.backward()
                 self.optimizer.step()
                 train_losses.append(loss.item())
+                # append for train metrics
+                train_true.append(yb.detach().cpu())
+                train_pred.append(yp.detach().cpu())
             train_loss = np.mean(train_losses)
             self.history['train_loss'].append(train_loss)
+            # compute train metrics on original feature space
+            train_metrics = self.compute_metrics(torch.cat(train_true), torch.cat(train_pred))
+            self.history['train_mse'].append(train_metrics['mse'])
+            self.history['train_mae'].append(train_metrics['mae'])
+            self.history['train_r2'].append(train_metrics['r2'])
 
             # Validation aşaması
             self.model.eval()
