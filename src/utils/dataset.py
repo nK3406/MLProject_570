@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from sklearn.decomposition import PCA
+
 torch_import = False
 try:
     import torch
@@ -18,16 +20,33 @@ Y = 3                   # tahmin edilecek zaman dilimi sayısı
 PARQUET_PATH = "data/traffic.parquet"  # veri yolu
 
 class TrafficDataset(Dataset):
-    def __init__(self, data_array: np.ndarray, x: int, y: int):
+    def __init__(self, data_array: np.ndarray, x: int, y: int, pca_components: int | None = None, pca_model: PCA | None = None):
         """
-        data_array: numpy.ndarray, şekil (timestep, sensor_sayısı)
-        x: geçmiş adım sayısı, y: tahmin adım sayısı
+        data_array: numpy.ndarray, shape (timesteps, num_sensors)
+        x: geçmiş adım sayısı (input sequence length)
+        y: tahmin adım sayısı (output sequence length)
+        pca_components: PCA bileşen sayısı. None ise PCA uygulanmaz.
+        pca_model: Önceden eğitilmiş sklearn PCA nesnesi. Verilirse yeniden fit edilmez.
         """
         self.x = x
         self.y = y
-        self.data = data_array
+
+        # Optional PCA transformation
+        if pca_components is not None:
+            if pca_model is None:
+                self.pca = PCA(n_components=pca_components)
+                self.data = self.pca.fit_transform(data_array)
+            else:
+                self.pca = pca_model
+                self.data = self.pca.transform(data_array)
+        else:
+            self.pca = None
+            self.data = data_array
+
+        # Number of sensors/features after optional PCA
+        self.sensors = self.data.shape[1]
         # oluşturulabilecek örnek sayısı
-        self.num_samples = data_array.shape[0] - x - y + 1
+        self.num_samples = self.data.shape[0] - x - y + 1
 
     def __len__(self):
         return self.num_samples
@@ -60,12 +79,13 @@ def get_dataloaders(
     train_ratio: float = TRAIN_RATIO,
     x: int = X,
     y: int = Y,
+    pca_components: int | None = None,
 ):
     """
     Veri setini okuyup eğitim ve doğrulama DataLoader'larını döndürür.
     """
     data_array = load_data(parquet_path)
-    dataset = TrafficDataset(data_array, x, y)
+    dataset = TrafficDataset(data_array, x, y, pca_components=pca_components)
     total_samples = len(dataset)
     train_len = int(total_samples * train_ratio)
     val_len = total_samples - train_len
