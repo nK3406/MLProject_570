@@ -168,6 +168,39 @@ class TrafficPredictor:
         if best_epoch != -1:
             print(f"Training finished. Best epoch: {best_epoch} with val_loss={best_val_loss:.4f}")
 
+    def inference(self, X, to_numpy: bool = True):
+        """
+        Modeli evaluation modunda çalıştırarak tahmin üretir.
+
+        Parametreler
+        ------------
+        X : torch.Tensor | torch.utils.data.DataLoader | np.ndarray | list
+            Model girdisi. Tensor ise şekli (batch, x, sensors) olmalıdır.
+            DataLoader verilirse her öğe (X_batch, y_batch) veya sadece X_batch
+            olabilir; yalnızca X_batch kullanılır.
+        to_numpy : bool
+            True ise çıktıyı numpy array olarak döndürür.
+
+        Dönüş
+        -----
+        torch.Tensor | np.ndarray
+            (batch, y, sensors) boyutlu tahminler.
+        """
+        self.model.eval()
+        preds = []
+        with torch.no_grad():
+            if isinstance(X, torch.utils.data.DataLoader):
+                for batch in X:
+                    Xb = batch[0] if isinstance(batch, (tuple, list)) else batch
+                    Xb = torch.as_tensor(Xb, dtype=torch.float32, device=self.device)
+                    yp = self.model(Xb)
+                    preds.append(yp.cpu())
+                preds = torch.cat(preds, dim=0)
+            else:
+                Xb = torch.as_tensor(X, dtype=torch.float32, device=self.device)
+                preds = self.model(Xb.to(self.device)).cpu()
+        return preds.numpy() if to_numpy else preds
+
     def save_model(self, path: str):
         """Save current model parameters"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
