@@ -4,6 +4,11 @@ import torch.optim as optim
 import numpy as np
 import os
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+from src.config import PROJECT_ROOT
+import re
 
 # LSTM tabanlı model
 class LSTMModel(nn.Module):
@@ -94,8 +99,10 @@ class TrafficPredictor:
             "val_r2": []
         }
         self.final_metrics = {}
+        self.model_type = model_type
         # PCA model for inverse transformation (optional)
         self.pca_model = pca_model
+
 
     def compute_metrics(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> dict:
         # Convert to numpy
@@ -207,6 +214,11 @@ class TrafficPredictor:
         self.final_metrics = self.compute_metrics(torch.cat(all_true), torch.cat(all_pred))
         if best_epoch != -1:
             print(f"Training finished. Best epoch: {best_epoch} with val_loss={best_val_loss:.4f}")
+        # store final predictions for plotting
+        self.val_true_all = torch.cat(all_true).detach().cpu().numpy().flatten()
+        self.val_pred_all = torch.cat(all_pred).detach().cpu().numpy().flatten()
+        # increment run count after training
+
 
     def inference(self, X, to_numpy: bool = True):
         """
@@ -258,6 +270,63 @@ class TrafficPredictor:
         self.model.to(self.device)
 
     def show(self):
-        print("== Son Performans Metrikleri ==")
-        for name, value in self.final_metrics.items():
-            print(f"{name}: {value}")
+        """Plot & save training curves and prediction heatmap with auto-incrementing filenames."""
+        graphs_dir = PROJECT_ROOT / "graphs"
+        graphs_dir.mkdir(parents=True, exist_ok=True)
+
+        # determine next train id by scanning existing subdirectories graphs/trainX
+        subdirs = [p.name for p in graphs_dir.iterdir() if p.is_dir() and re.match(r'train\d+$', p.name)]
+        ids = [int(re.match(r'train(\d+)', name).group(1)) for name in subdirs]
+        train_id = max(ids) + 1 if ids else 0
+
+        # create run-specific directory
+        run_dir = graphs_dir / f"train{train_id}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        suffix = self.model_type + ("_pca" if self.pca_model is not None else "")
+        fname = f"{suffix}.png"
+
+        epochs = list(range(1, len(self.history['train_loss']) + 1))
+        plt.figure(figsize=(12, 5))
+        # Loss subplot
+        plt.subplot(1, 2, 1)
+        plt.plot(epochs, self.history['train_loss'], label='train')
+        if self.history['val_loss']:
+            plt.plot(epochs, self.history['val_loss'], label='val')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Loss per Epoch')
+        plt.legend()
+
+        # MSE subplot
+        plt.subplot(1, 2, 2)
+        plt.plot(epochs, self.history['train_mse'], label='train')
+        if self.history['val_mse']:
+            plt.plot(epochs, self.history['val_mse'], label='val')
+        plt.xlabel('Epoch')
+        plt.ylabel('MSE')
+        plt.title('MSE per Epoch')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.savefig(run_dir / fname)
+        plt.show()
+        plt.close()
+
+        # Heatmap of true vs predicted
+        if hasattr(self, 'val_true_all') and hasattr(self, 'val_pred_all') and len(self.val_true_all) > 0:
+            cm_fname = "cm_" + fname
+            cmatrix, _, _ = np.histogram2d(self.val_true_all, self.val_pred_all, bins=50)
+            plt.figure(figsize=(6, 6))
+            sns.heatmap(cmatrix, cmap='viridis')
+            plt.xlabel('True')
+            plt.ylabel('Predicted')
+            plt.title('True vs Predicted')
+            plt.tight_layout()
+            plt.savefig(run_dir / cm_fname)
+            plt.close()
+
+        # Print metrics
+        print("== Final Metrics ==")
+        for k, v in self.final_metrics.items():
+            print(f"{k}: {v}")
