@@ -28,7 +28,7 @@ BATCH_SIZE = 64         # minibatch boyutu
 TRAIN_RATIO = 0.8       # eğitim-verification ayırma oranı
 X = 12                  # geçmiş zaman dilimi sayısı (örneğin 12*5 dakikalık adım)
 Y = 3                   # tahmin edilecek zaman dilimi sayısı
-PARQUET_PATH = "data/traffic.parquet"  # veri yolu
+DATA_PATH = "data/traffic.parquet"  # varsayılan veri yolu
 
 class TrafficDataset(Dataset):
     def __init__(self, data_array: np.ndarray, x: int, y: int, pca_components: int | None = None, pca_model: PCA | None = None):
@@ -100,19 +100,33 @@ class TrafficDataset(Dataset):
             return restored
 
 
-def load_data(parquet_path: str = PARQUET_PATH) -> np.ndarray:
+def load_data(file_path: str = DATA_PATH) -> np.ndarray:
+    """Veri dosyasını okuyup zaman sıralı numpy dizisine çevirir.
+
+    ``file_path`` uzantısına göre Parquet veya JSONL formatlarını destekler.
+    JSONL formatında her satır bir nesne içermeli ve ``traffic_sequence`` alanı
+    zaman serisini temsil etmelidir.
     """
-    Parquet formatındaki veri setini okuyup zaman sıralı numpy dizisine çevirir.
-    """
-    df = pd.read_parquet(parquet_path)
-    # datetime olarak sırala ve index olarak ata
-    df = df.sort_values("timestamp")
-    df = df.set_index("timestamp")
-    return df.values  # (timestep, sensör_sayısı)
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    if path.suffix == ".jsonl":
+        df = pd.read_json(path, lines=True)
+        if "traffic_sequence" in df.columns:
+            seq_df = pd.DataFrame(df["traffic_sequence"].tolist())
+            df = seq_df
+        df = df.fillna(0)
+        return df.values
+    else:
+        df = pd.read_parquet(path)
+        df = df.sort_values("timestamp")
+        df = df.set_index("timestamp")
+        return df.values  # (timestep, sensör_sayısı)
 
 
 def get_dataloaders(
-    parquet_path: str = PARQUET_PATH,
+    file_path: str = DATA_PATH,
     batch_size: int = BATCH_SIZE,
     train_ratio: float = TRAIN_RATIO,
     x: int = X,
@@ -122,7 +136,7 @@ def get_dataloaders(
     """
     Veri setini okuyup eğitim ve doğrulama DataLoader'larını döndürür.
     """
-    data_array = load_data(parquet_path)
+    data_array = load_data(file_path)
     dataset = TrafficDataset(data_array, x, y, pca_components=pca_components)
     total_samples = len(dataset)
     train_len = int(total_samples * train_ratio)
