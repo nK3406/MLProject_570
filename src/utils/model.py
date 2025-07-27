@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import os
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -316,12 +316,24 @@ class TrafficPredictor:
         # Heatmap of true vs predicted
         if hasattr(self, 'val_true_all') and hasattr(self, 'val_pred_all') and len(self.val_true_all) > 0:
             cm_fname = "cm_" + fname
-            cmatrix, _, _ = np.histogram2d(self.val_true_all, self.val_pred_all, bins=50)
+            # Compute binary confusion matrix (TP, FP, FN, TN)
+            threshold = 0.5  # adjust if needed
+            y_true_bin = (self.val_true_all >= threshold).astype(int)
+            y_pred_bin = (self.val_pred_all >= threshold).astype(int)
+            cmatrix = confusion_matrix(y_true_bin, y_pred_bin, labels=[0, 1])
+
             plt.figure(figsize=(6, 6))
-            sns.heatmap(cmatrix, cmap='viridis')
-            plt.xlabel('True')
-            plt.ylabel('Predicted')
-            plt.title('True vs Predicted')
+            sns.heatmap(cmatrix,
+                        annot=True,
+                        fmt='d',
+                        cmap='Blues',
+                        cbar=False,
+                        xticklabels=[0, 1],
+                        yticklabels=[0, 1],
+                        square=True)
+            plt.xlabel('Predicted')
+            plt.ylabel('Actual')
+            plt.title('Confusion Matrix')
             plt.tight_layout()
             plt.savefig(run_dir / cm_fname)
             plt.close()
