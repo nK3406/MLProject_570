@@ -10,6 +10,15 @@ from pathlib import Path
 from src.config import PROJECT_ROOT
 import re
 
+# ---- Deterministic settings ----
+import random
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
+# Ensure deterministic ops where possible (warn_only=True avoids crash if op has no deterministic impl)
+torch.use_deterministic_algorithms(True, warn_only=True)
+# --------------------------------
+
 # LSTM tabanlı model
 class LSTMModel(nn.Module):
     def __init__(self, sensors: int, x: int, y: int, hidden_dim: int = 64, num_layers: int = 2):
@@ -21,6 +30,9 @@ class LSTMModel(nn.Module):
         self.num_layers = num_layers
         self.lstm = nn.LSTM(input_size=sensors, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_dim, sensors * y)
+        # Deterministic constant initialization
+        for p in self.parameters():
+            nn.init.constant_(p, 0.01)
 
     def forward(self, x_input: torch.Tensor) -> torch.Tensor:
         # x_input: (batch, x, sensors)
@@ -50,6 +62,9 @@ class SCGNNModel(nn.Module):
         self.y = y
         self.gc1 = GCNConv(x, hidden_dim)
         self.gc2 = GCNConv(hidden_dim, y)
+        # Deterministic constant initialization
+        for p in self.parameters():
+            nn.init.constant_(p, 0.01)
         self.edge_index = edge_index
 
     def forward(self, x_input: torch.Tensor) -> torch.Tensor:
@@ -141,6 +156,7 @@ class TrafficPredictor:
 
     def train(self, train_loader, val_loader, epochs: int = 10, save_path: str | None = None, save_optimizer: bool = False):
         best_val_loss = float('inf') if save_path else None
+        checkpoint_interval = 20  # save every 20 epochs
         best_epoch = -1
         for epoch in range(1, epochs + 1):
             self.model.train()
@@ -183,8 +199,10 @@ class TrafficPredictor:
                     all_true.append(yb)
                     all_pred.append(yp)
             val_loss = np.mean(val_losses)
-            # checkpoint
-            if save_path and val_loss < best_val_loss:
+            # checkpoint (every 20 epochs or improved final)
+            save_due_to_interval = save_path and (epoch % checkpoint_interval == 0)
+            save_due_to_final = save_path and (epoch == epochs and val_loss < best_val_loss)
+            if save_due_to_interval or save_due_to_final:
                 checkpoint = self.model.state_dict()
                 if save_optimizer:
                     checkpoint = {

@@ -1,5 +1,16 @@
 import pandas as pd
 import numpy as np
+import random
+
+# ---- Deterministic settings ----
+random.seed(0)
+np.random.seed(0)
+try:
+    import torch
+    torch.manual_seed(0)
+except ImportError:
+    pass
+# --------------------------------
 from sklearn.decomposition import PCA
 
 torch_import = False
@@ -34,7 +45,7 @@ class TrafficDataset(Dataset):
         # Optional PCA transformation
         if pca_components is not None:
             if pca_model is None:
-                self.pca = PCA(n_components=pca_components)
+                self.pca = PCA(n_components=pca_components, svd_solver='full', random_state=0)
                 self.data = self.pca.fit_transform(data_array)
             else:
                 self.pca = pca_model
@@ -116,9 +127,11 @@ def get_dataloaders(
     total_samples = len(dataset)
     train_len = int(total_samples * train_ratio)
     val_len = total_samples - train_len
-    train_ds, val_ds = random_split(dataset, [train_len, val_len])
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size)
+    # Deterministic split and loaders
+    g = torch.Generator().manual_seed(0)
+    train_ds, val_ds = random_split(dataset, [train_len, val_len], generator=g)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
 
 # örnek kullanım\ if __name__ == "__main__":
