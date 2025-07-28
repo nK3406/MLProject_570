@@ -2,8 +2,11 @@
 from pathlib import Path
 import pandas as pd
 import pyarrow.dataset as ds
+import sys
+sys.path.append('..')
+from src import config
 
-def preview_parquet(parquet_path: Path, n_rows: int = 5) -> pd.DataFrame:
+def preview_parquet(parquet_path: Path, n_rows: int = 100) -> pd.DataFrame:
     """Belirtilen Parquet dosyasından ilk ``n_rows`` satırı döndürür.
 
     Parameters
@@ -25,3 +28,6 @@ def preview_parquet(parquet_path: Path, n_rows: int = 5) -> pd.DataFrame:
     dataset = ds.dataset(parquet_path)
     table = dataset.head(n_rows)
     return table.to_pandas()
+
+if __name__ == "__main__":
+    preview_parquet(config.DATA_INTERIM / "sampleParquet.parquet")
