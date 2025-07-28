@@ -4,7 +4,7 @@ src/utils/__pycache__
 
 #data/interim/*
 data/kaza/*
-data/trafik /*
+data/trafik/*
 .venv
 
 graphs/*
