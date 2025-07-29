@@ -279,12 +279,21 @@ class TrafficPredictor:
     def load_model(self, path: str, load_optimizer: bool = False):
         """Load model (and optionally optimizer) parameters from file"""
         checkpoint = torch.load(path, map_location=self.device)
-        if isinstance(checkpoint, dict) and 'model' in checkpoint:
-            self.model.load_state_dict(checkpoint['model'])
-            if load_optimizer and 'optimizer' in checkpoint:
-                self.optimizer.load_state_dict(checkpoint['optimizer'])
-        else:
-            self.model.load_state_dict(checkpoint)
+        state_dict = checkpoint['model'] if isinstance(checkpoint, dict) and 'model' in checkpoint else checkpoint
+        try:
+            self.model.load_state_dict(state_dict)
+        except RuntimeError as e:
+            if 'size mismatch' in str(e):
+                sensors_saved = state_dict['lstm.weight_ih_l0'].shape[1]
+                msg = (
+                    "Loaded model expects {saved} input features but current "
+                    "model was initialized with {current}. "
+                    "Use the same PCA component count as during training."
+                ).format(saved=sensors_saved, current=self.sensors)
+                raise RuntimeError(msg) from e
+            raise
+        if load_optimizer and isinstance(checkpoint, dict) and 'optimizer' in checkpoint:
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.model.to(self.device)
 
     def show(self):
